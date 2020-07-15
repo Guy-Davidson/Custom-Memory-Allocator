@@ -1,84 +1,103 @@
-/*Standsrd Libraries*/
+/**************************Include Libraries & Headers******************/
 #include <stdint.h>
 #include <stdio.h>
-/**
- * Header Files Declarations
- * definitions.h includes all program defines.
- * log.h includes all program error, info and debug outputs.
- * block.h is a module for allocating memory on the global stack.
- */
+//program definitions
 #include "definitions.h"
+//loging error info & debug
 #include "log.h"
+//struct Block module
 #include "block.h"
+//Memory allocator module
 #include "allocator.h"
-#include "bit.h"
 
-/**This module uses the heap**/
-extern uint8_t heap[HEADER_SIZE];
+/**************************Global Variables**************************/
+extern uint8_t heap[HEAP_SIZE];
 
-/**struct decleration*
- * mode is either 'a' for allocated and 'f' for free.
- * size is the buffer size.
- * next points to the next block incase it's a mode free block. (no need to link allocated blocks).
- */
-typedef struct 
-{
-	uint8_t mode;
-	uint32_t size;
-	uint32_t next;
-} Block_st;
-
-typedef Block_st* Block;
-
-/*****************Private function declerations*******************/
+/*****************Private Function Declerations*******************/
 
 /**
- * [block_isNewBlockValid checks to validate newBlock agrs.]
+ * [block_isNewBlockValid checks to validate newBlock agrs]
  */
-enum bool block_isNewBlockValid(uint8_t mode, uint32_t size, uint32_t bufferIndex);
+static enum bool block_isNewBlockValid(uint8_t mode, uint32_t size, uint8_t* heapCell);
+
+
+/**
+ * [block_bufferSizePadding: finds and smallest multiple of BUFFER_UNIT that is 
+    bigger then new block size, this allows padding of the buffers to blocks of BUFFER_UNIT.
+    By doing so, blocks are alligned with sizeof(Block_st), and the
+    free-block list get's smaller as the chance for a fit is increased]
+ * @param  size [requested new block size]
+ * @return      [smallest multiple of BUFFER_UNIT that is bigger then new block size]
+ */
+static uint32_t block_bufferSizePadding(uint32_t size);
 
 
 /*******************Function Implementations********************/
 
-enum bool Block_newBlock(uint8_t mode, uint32_t size, uint32_t bufferIndex)
+/**
+ * [Block_NewBlock creates new block in the heap.]
+ * @param  mode     [new block mode 'a' or 'f']
+ * @param  size     [buffer size]
+ * @param  heapCell [Pointer to heap where the block will be stored]
+ * @return          [bool according to succes]
+ */
+enum bool Block_NewBlock(uint8_t mode, uint32_t size, uint8_t* heapCell)
 {
-	if (!block_isNewBlockValid(mode, size, bufferIndex)) return false;
+	if (!block_isNewBlockValid(mode, size, heapCell))
+	{
+		LOG_ERROR("newBlock failure.");
+		return false;	
+	} 
 
-	LOG_INFO("Creating new Block...");
-	
-	heap[MODE_INDEX] = mode;	
-	Bit_Insert32BitsIn4Bytes(heap + SIZE_INDEX, size);	
-	Bit_Insert32BitsIn4Bytes(heap + NEXT_INDEX, NILL);
+	LOG_INFO("Creating new Block");
 
+	Block newBlock = NULL;
+
+	newBlock = (Block) heapCell;
+
+	if (newBlock == NULL)
+	{
+		LOG_ERROR("NewBlock failed");
+		return false;
+	}
+
+	newBlock->mode = mode;	
+	newBlock->size = block_bufferSizePadding(size);	
+	newBlock->next = NULL;
+		
 	#ifdef DEBUG
 
-	Block_PrintBlock(bufferIndex);
+	Block_PrintBlock(newBlock);
 
 	#endif
+
+	LOG_INFO("Created block succesfuly!");
 	
 	return true;
 }
 
 /**
- * [block_isNewBlockValid checks to validate newBlock agrs.]
+ * [block_isNewBlockValid checks to validate newBlock agrs]
  */
-enum bool block_isNewBlockValid(uint8_t mode, uint32_t size, uint32_t bufferIndex)
+enum bool block_isNewBlockValid(uint8_t mode, uint32_t size, uint8_t* heapCell)
 {
 	if ((mode != 'a') && (mode != 'f'))
 	{
-		//ERROR PRINT
+		LOG_ERROR("mode can be either 'a' or 'f'");
 		return false;
 	}
 
-	if (size <= 0)
+	if ((size > MAX_BUFFER_SIZE) || ((int32_t)size <= 0))
 	{
-		//ERROR PRINT
+		LOG_ERROR("size inccorect");
 		return false;
 	}
 
-	if (bufferIndex < MIN_BUFFER_INDEX)
+	uint32_t blockIndex = heapCell - heap;
+
+	if ((blockIndex < sizeof(HeapHeader_st)) || (blockIndex > HEAP_SIZE))
 	{
-		//ERROR PRINT
+		LOG_ERROR("Invalid buffer index");
 		return false;
 	}
 
@@ -86,31 +105,49 @@ enum bool block_isNewBlockValid(uint8_t mode, uint32_t size, uint32_t bufferInde
 }
 
 /**
- * [Block_switchBlockMode: switches from ]
+ * [block_bufferSizePadding: finds and smallest multiple of BUFFER_UNIT that is 
+    bigger then new block size, this allows padding of the buffers to blocks of BUFFER_UNIT.
+    By doing so, blocks are alligned with sizeof(Block_st), and the
+    free-block list get's smaller as the chance for a fit is increased.]
+ * @param  size [requested new block size]
+ * @return      [smallest multiple of BUFFER_UNIT that is bigger then new block size]
+ */
+uint32_t block_bufferSizePadding(uint32_t size)
+{
+	uint32_t res = BUFFER_UNIT;	
+	
+	while (res < size)
+	{
+		res += BUFFER_UNIT;
+	}	
+
+	return res;
+}
+
+/**
+ * [Block_switchBlockMode: switches block mode ]
  * @param  bufferIndex [block to be switched]
  * @return             [bool according to success]
  */
-enum bool Block_switchBlockMode(uint32_t bufferIndex)
-{
-	uint8_t currentMode = heap[bufferIndex - MODE_OFFSET];
-
-	if ((currentMode != 'a') && (currentMode != 'f'))
+enum bool Block_SwitchBlockMode(Block block)
+{	
+	if ((block->mode != 'a') && (block->mode != 'f'))
 	{
-		//ERROR PRINT
+		LOG_ERROR("Invalid block for switch");
 		return false;
 	}
 
 	
-	if (currentMode == 'a')
+	if (block->mode == 'a')
 	{
-		//INFO PRINT
-		currentMode = 'f';
+		LOG_INFO("switched allocated block to free.");
+		block->mode = 'f';
 	}
 
 	else 
 	{
-		//INFO PRINT
-		currentMode = 'a';
+		LOG_INFO("switched free block to allocated.");
+		block->mode = 'a';
 	}
 
 	return true;
@@ -123,27 +160,26 @@ enum bool Block_switchBlockMode(uint32_t bufferIndex)
 
 /**
  * [Block_PrintBlock]
- * @param bufferIndex [the index of a block index]
+ * @param bufferIndex [block to print]
  */
-void Block_PrintBlock(uint8_t bufferIndex)
+void Block_PrintBlock(Block block)
 {
-	uint8_t mode = 0;
-	uint32_t size = 0;
-	uint32_t next = 0;
-
-	mode = heap[MODE_INDEX];
-	Bit_Insert4BytesIn32Bits(&size, heap + SIZE_INDEX);	
-	Bit_Insert4BytesIn32Bits(&next, heap + NEXT_INDEX);
-	
-
-	printf("[%c, %d, %d, ",mode, size, next);
-	
-	for (int i = 0; i < size - 1 ; i++)
+	if (block->next == NULL)	
 	{
-		printf("-, ");
+		CUSTOMMEMALLOCATOR_PRINT("[%c, %d, (null), ",block->mode, block->size);
 	}
 
-	printf("-]\n");
+	else
+	{
+		CUSTOMMEMALLOCATOR_PRINT("[%c, %d, %lu, ",block->mode, block->size, (uint8_t*)(block->next) - heap);	
+	}		
+	
+	for (uint32_t i = 0; i < block->size - 1 ; i++)
+	{
+		CUSTOMMEMALLOCATOR_PRINT("-, ");
+	}
+
+	CUSTOMMEMALLOCATOR_PRINT("-]\n\n");
 
 	return;
 }
@@ -151,7 +187,3 @@ void Block_PrintBlock(uint8_t bufferIndex)
 #endif
 
 /*************************End of File****************************************/
-
-
-
-

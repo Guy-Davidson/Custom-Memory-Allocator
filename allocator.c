@@ -1,28 +1,23 @@
-/*Standsrd Libraries*/
+/**************************Include Libraries & Headers******************/
 #include <stdint.h>
 #include <stdio.h>
-/**
- * Header Files Declarations
- * definitions.h includes all program defines.
- * log.h includes all program error, info and debug outputs.
- * block.h is a module for defining the block struct.
- * allocator.h is this module header.
- */
+//program definitions
 #include "definitions.h"
+//loging error info & debug
 #include "log.h"
+//struct Block module
 #include "block.h"
+//Memory allocator module
 #include "allocator.h"
-#include "bit.h"
 
-
-/*****************Global Variables***********************/
+/**************************Global Variables**************************/
 
 //heap is not initialized similerly to run-time memory heap.
-uint8_t heap[HEADER_SIZE];
+uint8_t heap[HEAP_SIZE];
 
 enum bool g_isInit = false;
 
-/************Private function declerations**************/
+/*****************Private Function Declerations*******************/
 
 /**
  * [allocator_initialize: init the heap]
@@ -31,101 +26,188 @@ static void allocator_initialize();
 
 /**
  * [allocator_isAllocateValid: validate that allocate is valid by
- * checking that bytes is positive, and that there is room to allocat ein the heap.]
+ * checking that bytes is positive, and there is enough room to allocate in the heap]
  * @param  bytes [number of bytes to allocate.]
  * @return       [bool according to success.]
  */
 static enum bool allocator_isAllocateValid(uint32_t bytes);
 
+/**
+ * [allocator_isDeallocateValid: check for a valid previously allocated memory block]
+ * @param  HeapCell [Pointer to heap index to be deallocated]
+ * @return          [true for a valid memory block and false other wise]
+ */
+static enum bool allocator_isDeallocateValid(uint8_t* HeapCell);
 
 
-/****************Function Implementations*****************/
+
+/*******************Function Implementations********************/
 
 void allocator_initialize()
 {	
-	LOG_INFO("Initializing Heap...\n");
+	LOG_INFO("Initializing Heap...");
 	
-	Bit_Insert32BitsIn4Bytes(heap + SIZE_COUNTER, HEAP_HEADER_SIZE + HEADER_SIZE);	
-	Bit_Insert32BitsIn4Bytes(heap + HEAD_FREE, MIN_BUFFER_INDEX);
-	
-	Block_newBlock('f',HEAP_SIZE - HEAP_HEADER_SIZE - HEADER_SIZE, MIN_BUFFER_INDEX);
+	HeapHeader newHeapHeader = NULL;
+
+	newHeapHeader = (HeapHeader) heap;
+
+	if (newHeapHeader == NULL)
+	{
+		LOG_ERROR("Initialization failed");
+		return;		
+	}
+
+	newHeapHeader->allocMemSize = sizeof(HeapHeader_st) + sizeof(Block_st);
+
+	newHeapHeader->headFree = NULL;	
+
+	if (!Block_NewBlock('f', HEAP_SIZE - newHeapHeader->allocMemSize, heap + sizeof(HeapHeader_st)))
+	{
+		LOG_ERROR("Initialization failed");
+		return;
+	}
+
+	newHeapHeader->headFree = (Block) (heap + sizeof(HeapHeader_st));
+
+	LOG_INFO("Initialized succesfuly!");
 
 	g_isInit = true;
-
-	LOG_INFO("\nInitialization was succesful!\n");
-
+	
 	return;
 }
 
 /**
- * [Allocator_Allocate: allocated bytes cells in heap]
+ * [Allocator_Allocate: allocated bytes cells in the heap]
  * @param  bytes [number of bytes to allocate]
- * @return       [buffer index upon success and NILL upon failure.]
+ * @return       [buffer pointer upon success and NULL upon failure.]
  */
 uint8_t* Allocator_Allocate(uint32_t bytes)			
-{
-	//check if possible to start allocate.
+{	
 	if (!g_isInit) allocator_initialize();
 
 	if (!allocator_isAllocateValid(bytes)) 
 	{
-			LOG_ERROR("Invalid arguments for allocating block");
+			LOG_ERROR("Allocate failed");
 			return NULL;
 	}
+
+	LOG_INFO("Starting to allocate...");
+
+	HeapHeader currentHH = (HeapHeader) heap;	
+	Block freeToAlloc = NULL;
 	
 	//find where to allocate new block
-	uint32_t bufferIndex = 0;	
-	uint32_t currentFree = HEAD_FREE; 	
-	//iterate to find larage enough space.
-	bufferIndex = Bit_IndexTo32Bit(heap + currentFree);
-	uint32_t freeBlockSize = Bit_IndexTo32Bit(heap + SIZE_INDEX);
-	uint32_t newBlockSize = HEADER_SIZE + bytes;
+	freeToAlloc	= currentHH->headFree;
+	//iterate to find larage enough space.				
 	
-	//creat new allocated block.
-	if (!Block_newBlock('a', bytes, Bit_IndexTo32Bit(heap + currentFree)))
+	uint32_t localAvailableSize = freeToAlloc->size;	
+
+	//creat new allocated block.			
+	if (!Block_NewBlock('a', bytes, (uint8_t*)freeToAlloc))
 	{
-		LOG_ERROR("failure to create new block.");
+		LOG_ERROR("Allocate failed");
 		return NULL;
 	}
+
+	uint32_t newBlockSize = sizeof(Block_st) + freeToAlloc->size;
 	
-	//update free block for being smaller.
-	if (!Block_newBlock('f', freeBlockSize - newBlockSize, Bit_IndexTo32Bit(heap + currentFree) + newBlockSize))
+	//update free block for being smaller.		
+	if (!Block_NewBlock('f', localAvailableSize - newBlockSize, ((uint8_t*)freeToAlloc) + newBlockSize))
 	{
-		LOG_ERROR("failure to create new block.");
+		LOG_ERROR("Allocate failed");
 		return NULL;
 	}
 	
 	//update heap size.
-	uint32_t newSize = Bit_IndexTo32Bit(heap + SIZE_COUNTER) + newBlockSize;
-	Bit_Insert32BitsIn4Bytes(heap + SIZE_COUNTER, newSize);
+	currentHH->allocMemSize += newBlockSize;	
 	
 	//update head free
-	Bit_Insert32BitsIn4Bytes(heap + HEAD_FREE, Bit_IndexTo32Bit(heap + currentFree) + newBlockSize);
+	currentHH->headFree = (Block)((uint8_t*)freeToAlloc + newBlockSize);
+		
+	LOG_INFO("Allocation was succesful!");
 
-	return heap;
+	return (uint8_t*)freeToAlloc;
 }
 
 /**
  * [allocator_isAllocateValid: validate that allocate is valid by
- * checking that bytes is positive, and that there is room to allocat ein the heap.]
+ * checking that bytes is positive, and that there is room to allocate in the heap.]
  * @param  bytes [number of bytes to allocate.]
  * @return       [bool according to success.]
  */
 enum bool allocator_isAllocateValid(uint32_t bytes)
 {
-	if (bytes <= 0) 
+	if ((int32_t)bytes <= 0)
 	{
-		LOG_ERROR("bytes non-positive.");
+		//implementaion decision reguarding allocate(0).
+		LOG_ERROR("bytes must be positive");
 		return false;
 	}
 
-	if (Bit_IndexTo32Bit(heap + SIZE_COUNTER) + HEADER_SIZE + bytes > HEAP_SIZE)
+	HeapHeader currentHH = (HeapHeader) heap;
+
+	if (currentHH->allocMemSize + bytes > HEAP_SIZE)
 	{
 		LOG_ERROR("heap overflow");
 		return false;
 	}
 
 	return true;
+}
+
+/**
+ * [Allocator_Deallocate: deallocate a memory block.
+ * IMPORTANT: deallocate makes some validation checks (desribed in isDeallocateValid),
+ * But the user can free a non previously allocated block by misuse.
+ * This implementation decision is inherited from the function free(),
+ * as the cost of checking each deallocate is O(n), while currently it's O(1)]
+ * @param HeapCell [Pointer to heap cell to be deallocated.]
+ */
+void Allocator_Deallocate(uint8_t* HeapCell)
+{		
+	if ((!g_isInit) || (!allocator_isDeallocateValid(HeapCell)))
+	{
+			LOG_ERROR("Deallocate failed");			
+			return;
+	}
+
+	LOG_INFO("Starting to deallocate...");	
+
+	LOG_INFO("Deallocating was succesful!");
+
+	return;
+}
+
+/**
+ * [allocator_isDeallocateValid: check for a valid previously allocated memory block]
+ * @param  HeapCell [Pointer to heap index to be deallocated]
+ * @return          [true for a valid memory block and false other wise]
+ */
+enum bool allocator_isDeallocateValid(uint8_t* HeapCell)
+{
+	uint32_t bufferIndex = HeapCell - heap;	
+
+	if ((bufferIndex <= 0) || (bufferIndex > HEAP_SIZE))
+	{
+		LOG_DEBUG("Pointer out of bounds");
+		return false;
+	}
+	
+	Block freeBlock = (Block) HeapCell;	
+
+	if (freeBlock->mode != 'a') 
+	{
+		LOG_DEBUG("mode inccorect");
+		return false;
+	}	
+
+	if (freeBlock->size > MAX_BUFFER_SIZE)
+	{
+		LOG_DEBUG("block size inccorect");
+		return false;
+	}	
+
+	return true; 
 }
 
 
@@ -135,17 +217,15 @@ enum bool allocator_isAllocateValid(uint32_t bytes)
 
 /**
  * [Allocator_PrintHeapHeader: prints the heap header
- 	to get info about heap size and head of free list.]
+ 	to get info about heap allocated memory size and head of free list.]
  */
 void Allocator_PrintHeapHeader()
 {
 	if (!g_isInit) allocator_initialize();
 
-	printf("Heap Header -> {");
-	
-	printf("%d, ", Bit_IndexTo32Bit(heap + SIZE_COUNTER));
-		
-	printf("%d}\n", Bit_IndexTo32Bit(heap + HEAD_FREE));
+	HeapHeader currentHH = (HeapHeader) heap;
+
+	CUSTOMMEMALLOCATOR_PRINT("Heap Header -> {%d, %lu}\n", currentHH->allocMemSize, (uint8_t*)currentHH->headFree - heap);		
 
 	return;
 }
@@ -157,14 +237,18 @@ void Allocator_PrintHeap()
 {
 	Allocator_PrintHeapHeader();
 
-	uint32_t bufferIndex = MIN_BUFFER_INDEX;
+	uint8_t* currentBlock = NULL;
 
-	while (bufferIndex < HEAP_SIZE)
+	currentBlock = heap + sizeof(HeapHeader_st);		
+			 
+	while (currentBlock - heap < HEAP_SIZE)
 	{
-		Block_PrintBlock(bufferIndex);		
-		bufferIndex = bufferIndex + Bit_IndexTo32Bit(heap + SIZE_INDEX) + HEADER_SIZE;
+		Block_PrintBlock((Block)currentBlock);		
+		currentBlock = currentBlock + sizeof(Block_st) + ((Block)currentBlock)->size;
 	}
 
+	printf("\n");
+	
 	return; 
 }
 
