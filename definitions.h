@@ -11,7 +11,7 @@ enum bool {false, true};
 #define GB (1 << 30)
 
 /**Buffer Properties**/
-#define BUFFER_UNIT 16
+#define BUFFER_UNIT 24
 
 /**Heap Properties**/
 #define HEAP_SIZE (20 * BUFFER_UNIT)

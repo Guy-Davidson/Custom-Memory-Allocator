@@ -12,11 +12,12 @@ typedef struct block
 	uint8_t mode;
 	uint32_t size;
 	struct block* next;
+	struct block* prev;
 } Block_st;
 
 typedef Block_st* Block;
 
-/**Public function declerations**/
+/************Public function declerations**********/
 
 /**
  * [Block_NewBlock creates new block in the heap.]
@@ -33,6 +34,16 @@ enum bool Block_NewBlock(uint8_t mode, uint32_t size, uint8_t* heapCell);
  * @return             [bool according to success]
  */
 enum bool Block_SwitchBlockMode(Block block);
+
+/**
+ * [Block_BufferSizePadding: finds and smallest multiple of BUFFER_UNIT that is 
+    bigger then new block size, this allows padding of the buffers to blocks of BUFFER_UNIT.
+    By doing so, blocks are alligned with sizeof(Block_st), and the
+    free-block list get's smaller as the chance for a fit is increased]
+ * @param  size [requested new block size]
+ * @return      [smallest multiple of BUFFER_UNIT that is bigger then new block size]
+ */
+uint32_t Block_BufferSizePadding(uint32_t size);
 
 
 /***************Debuging functions declerations****************/

@@ -9,6 +9,10 @@
 #include "block.h"
 //Memory allocator module
 #include "allocator.h"
+//merge adjacent free block module
+#include "merge.h"
+//heap information module
+#include "heap.h"
 
 /**************************Global Variables**************************/
 extern uint8_t heap[HEAP_SIZE];
@@ -19,17 +23,6 @@ extern uint8_t heap[HEAP_SIZE];
  * [block_isNewBlockValid checks to validate newBlock agrs]
  */
 static enum bool block_isNewBlockValid(uint8_t mode, uint32_t size, uint8_t* heapCell);
-
-
-/**
- * [block_bufferSizePadding: finds and smallest multiple of BUFFER_UNIT that is 
-    bigger then new block size, this allows padding of the buffers to blocks of BUFFER_UNIT.
-    By doing so, blocks are alligned with sizeof(Block_st), and the
-    free-block list get's smaller as the chance for a fit is increased]
- * @param  size [requested new block size]
- * @return      [smallest multiple of BUFFER_UNIT that is bigger then new block size]
- */
-static uint32_t block_bufferSizePadding(uint32_t size);
 
 
 /*******************Function Implementations********************/
@@ -62,8 +55,9 @@ enum bool Block_NewBlock(uint8_t mode, uint32_t size, uint8_t* heapCell)
 	}
 
 	newBlock->mode = mode;	
-	newBlock->size = block_bufferSizePadding(size);	
+	newBlock->size = Block_BufferSizePadding(size);	
 	newBlock->next = NULL;
+	newBlock->prev = NULL;
 		
 	#ifdef DEBUG
 
@@ -105,14 +99,14 @@ enum bool block_isNewBlockValid(uint8_t mode, uint32_t size, uint8_t* heapCell)
 }
 
 /**
- * [block_bufferSizePadding: finds and smallest multiple of BUFFER_UNIT that is 
+ * [Block_bufferSizePadding: finds and smallest multiple of BUFFER_UNIT that is 
     bigger then new block size, this allows padding of the buffers to blocks of BUFFER_UNIT.
     By doing so, blocks are alligned with sizeof(Block_st), and the
     free-block list get's smaller as the chance for a fit is increased.]
  * @param  size [requested new block size]
  * @return      [smallest multiple of BUFFER_UNIT that is bigger then new block size]
  */
-uint32_t block_bufferSizePadding(uint32_t size)
+uint32_t Block_BufferSizePadding(uint32_t size)
 {
 	uint32_t res = BUFFER_UNIT;	
 	
@@ -164,15 +158,28 @@ enum bool Block_SwitchBlockMode(Block block)
  */
 void Block_PrintBlock(Block block)
 {
+	CUSTOMMEMALLOCATOR_PRINT("{index: %lu, mode: %c, size: %d, ",(uint8_t*)block - heap, block->mode, block->size);
+
 	if (block->next == NULL)	
 	{
-		CUSTOMMEMALLOCATOR_PRINT("[%c, %d, (null), ",block->mode, block->size);
+		CUSTOMMEMALLOCATOR_PRINT("next: null, ");
 	}
 
 	else
 	{
-		CUSTOMMEMALLOCATOR_PRINT("[%c, %d, %lu, ",block->mode, block->size, (uint8_t*)(block->next) - heap);	
-	}		
+		CUSTOMMEMALLOCATOR_PRINT("next: %lu, ", (uint8_t*)(block->next) - heap);	
+	}
+
+	if (block->prev == NULL)	
+	{
+		CUSTOMMEMALLOCATOR_PRINT("prev: null}");
+	}
+	else
+	{
+		CUSTOMMEMALLOCATOR_PRINT("prev: %lu}", (uint8_t*)(block->prev) - heap);	
+	}	
+
+	CUSTOMMEMALLOCATOR_PRINT("->[");   
 	
 	for (uint32_t i = 0; i < block->size - 1 ; i++)
 	{

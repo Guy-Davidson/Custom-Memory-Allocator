@@ -9,11 +9,13 @@
 #include "block.h"
 //Memory allocator module
 #include "allocator.h"
+//merge adjacent free block module
+#include "merge.h"
+//heap information module
+#include "heap.h"
 
 /**************************Global Variables**************************/
-
-//heap is not initialized similerly to run-time memory heap.
-uint8_t heap[HEAP_SIZE];
+extern uint8_t heap[HEAP_SIZE];
 
 enum bool g_isInit = false;
 
@@ -38,6 +40,36 @@ static enum bool allocator_isAllocateValid(uint32_t bytes);
  * @return          [true for a valid memory block and false other wise]
  */
 static enum bool allocator_isDeallocateValid(uint8_t* HeapCell);
+
+/**
+ * [allocator_getFreeToAllocate iterate on the free block linked list to find the smallest,
+ * free block that fits bytes cells.]
+ * @param  bytes [requested bytes to allocate.]
+ * @return       [pointer to big enough free block or NULL incase there is no such block.]
+ */
+static Block allocator_getFreeToAllocate(uint32_t bytes);
+
+
+/**
+ * [allocator_allocateInsideFree create two new blocks, allocated and free]
+ * @param  freeToAlloc [pointer to free block]
+ * @return             [bool according to success]
+ */
+static enum bool allocator_allocateInsideFree(Block freeToAlloc, uint32_t bytes);
+
+/**
+ * [allocator_allocateExapandedBlock creates one expanded allocated block]
+ * @param  freeToAlloc [pointer to free block]
+ * @return             [bool according to success]
+ */
+static enum bool allocator_allocateExapandedBlock(Block freeToAlloc, uint32_t bytes);
+
+/**
+ * [allocator_allocateInPlace switch a free block to allocated.]
+ * @param  freeToAlloc [pointer to free block]
+ * @return             [bool according to succss]
+ */
+static enum bool allocator_allocateInPlace(Block freeToAlloc);
 
 
 
@@ -92,37 +124,63 @@ uint8_t* Allocator_Allocate(uint32_t bytes)
 	}
 
 	LOG_INFO("Starting to allocate...");
-
-	HeapHeader currentHH = (HeapHeader) heap;	
+	
 	Block freeToAlloc = NULL;
 	
 	//find where to allocate new block
-	freeToAlloc	= currentHH->headFree;
-	//iterate to find larage enough space.				
-	
-	uint32_t localAvailableSize = freeToAlloc->size;	
+	freeToAlloc = allocator_getFreeToAllocate(bytes);	
 
-	//creat new allocated block.			
-	if (!Block_NewBlock('a', bytes, (uint8_t*)freeToAlloc))
+	//case: no room to allocate
+	if (!freeToAlloc)
+	{		
+		if (Merge_Exe())
+		{
+			//try again
+			freeToAlloc = allocator_getFreeToAllocate(bytes);
+			if(!freeToAlloc)
+			{
+				LOG_ERROR("Allocate failed: heap overflow");
+				return NULL;
+			}			
+		}
+		else
+		{
+			LOG_ERROR("Allocate failed: heap overflow");
+			return NULL;	
+		}				
+	}
+		
+	uint32_t remainingSize = freeToAlloc->size - Block_BufferSizePadding(bytes);
+	
+	//case: create 'a' block and 'f' block.
+	if (remainingSize >= 2 * BUFFER_UNIT) 
+	{	
+		if (!allocator_allocateInsideFree(freeToAlloc, bytes))
+		{
+			LOG_ERROR("Allocate failed");
+			return NULL;
+		}
+	}
+		
+	//case: create exapnded 'a' block. (no room for free).
+	else if (remainingSize ==  BUFFER_UNIT) 
 	{
-		LOG_ERROR("Allocate failed");
-		return NULL;
+		if (!allocator_allocateExapandedBlock(freeToAlloc, bytes))
+		{
+			LOG_ERROR("Allocate failed");
+			return NULL;
+		}
 	}
 
-	uint32_t newBlockSize = sizeof(Block_st) + freeToAlloc->size;
-	
-	//update free block for being smaller.		
-	if (!Block_NewBlock('f', localAvailableSize - newBlockSize, ((uint8_t*)freeToAlloc) + newBlockSize))
+	//case: create 'a' block only. (no room for free).
+	else 
 	{
-		LOG_ERROR("Allocate failed");
-		return NULL;
-	}
-	
-	//update heap size.
-	currentHH->allocMemSize += newBlockSize;	
-	
-	//update head free
-	currentHH->headFree = (Block)((uint8_t*)freeToAlloc + newBlockSize);
+		if(!allocator_allocateInPlace(freeToAlloc))
+		{
+			LOG_ERROR("Allocate failed");
+			return NULL;
+		}
+	}	
 		
 	LOG_INFO("Allocation was succesful!");
 
@@ -144,11 +202,152 @@ enum bool allocator_isAllocateValid(uint32_t bytes)
 		return false;
 	}
 
-	HeapHeader currentHH = (HeapHeader) heap;
+	return true;
+}
 
-	if (currentHH->allocMemSize + bytes > HEAP_SIZE)
+/**
+ * [allocator_getFreeToAllocate iterate on the free block linked list to find the smallest,
+ * free block that fits bytes cells.]
+ * @param  bytes [requested bytes to allocate.]
+ * @return       [pointer to big enough free block or NULL incase there is no such block.]
+ */
+Block allocator_getFreeToAllocate(uint32_t bytes)
+{
+	uint32_t requestedSize = Block_BufferSizePadding(bytes);
+	Block freeToAlloc = NULL;
+	Block freeListIterator = NULL;
+
+	HeapHeader currentHH = (HeapHeader) heap;	
+
+	freeToAlloc	= currentHH->headFree;
+	freeListIterator = freeToAlloc->next;
+
+	LOG_INFO("searching list for a free block large enough to allocate...");
+
+	while (freeListIterator != NULL)
 	{
-		LOG_ERROR("heap overflow");
+		if ((freeToAlloc->size > requestedSize) && (freeListIterator->size > requestedSize))
+		{
+			if (freeListIterator->size < freeToAlloc->size)
+			{
+				freeToAlloc = freeListIterator;
+			}			
+		}
+		else if (freeListIterator->size > requestedSize)
+		{
+			freeToAlloc = freeListIterator;			
+		}
+		freeListIterator = freeListIterator->next;
+	}
+
+	if (freeToAlloc->size < requestedSize)
+	{
+		LOG_ERROR("found no available free block");
+		return NULL;
+	}
+
+	LOG_INFO("found free block to allocate!");
+	return freeToAlloc;
+}
+
+/**
+ * [allocator_allocateInsideFree create two new blocks, allocated and free]
+ * @param  freeToAlloc [pointer to free block]
+ * @return             [bool according to success]
+ */
+enum bool allocator_allocateInsideFree(Block freeToAlloc, uint32_t bytes)
+{
+	uint32_t localAvailableSize = freeToAlloc->size;
+	Block_st tempLinkBlock = *freeToAlloc;
+
+	//creat new allocated block.			
+	if (!Block_NewBlock('a', bytes, (uint8_t*)freeToAlloc))
+	{
+		LOG_DEBUG("allocateInsideFree failed");
+		return false;
+	}
+
+	uint32_t newBlockSize = sizeof(Block_st) + freeToAlloc->size;
+	Block newFreeBlock = (Block)((uint8_t*)freeToAlloc + newBlockSize);
+	
+	//update free block for being smaller.		
+	if (!Block_NewBlock('f', localAvailableSize - newBlockSize, (uint8_t*)newFreeBlock))
+	{
+		LOG_DEBUG("allocateInsideFree failed");
+		return false;
+	}
+
+	if (!Heap_FreeListReplace(&tempLinkBlock, newFreeBlock))
+	{
+		LOG_DEBUG("allocateInsideFree failed");
+		return false;
+	}
+	
+	if (!Heap_UpdateSize(newBlockSize, 'a'))
+	{
+		LOG_DEBUG("allocateInsideFree failed");
+		return false;	
+	}
+
+	return true;
+}
+
+/**
+ * [allocator_allocateExapandedBlock creates one expanded allocated block]
+ * @param  freeToAlloc [pointer to free block]
+ * @return             [bool according to success]
+ */
+enum bool allocator_allocateExapandedBlock(Block freeToAlloc, uint32_t bytes)
+{
+	uint32_t newBlockBufferSize = Block_BufferSizePadding(bytes) + BUFFER_UNIT;
+	Block_st tempLinkBlock = *freeToAlloc;
+	
+	//create new allocated block.			
+	if (!Block_NewBlock('a', newBlockBufferSize, (uint8_t*)freeToAlloc))
+	{
+		LOG_DEBUG("allocateExapandedBlock failed");
+		return false;
+	}
+
+	if (!Heap_FreeListDelete(&tempLinkBlock))
+	{
+		LOG_DEBUG("allocateExapandedBlock failed");
+		return false;
+	}
+
+	if (!Heap_UpdateSize(newBlockBufferSize, 'a'))
+	{
+		LOG_DEBUG("allocateExapandedBlock failed");
+		return false;
+	}
+
+	return true;
+}
+
+/**
+ * [allocator_allocateInPlace switch a free block to allocated.]
+ * @param  freeToAlloc [pointer to free block]
+ * @return             [bool according to succss]
+ */
+enum bool allocator_allocateInPlace(Block freeToAlloc)
+{
+	Block_st tempLinkBlock = *freeToAlloc;
+
+	if (!Block_SwitchBlockMode(freeToAlloc))
+	{
+		LOG_DEBUG("allocateInPlace failed");
+		return false;
+	}
+
+	if (!Heap_FreeListDelete(&tempLinkBlock))
+	{
+		LOG_DEBUG("allocateInPlace failed");
+		return false;
+	}
+
+	if (!Heap_UpdateSize(freeToAlloc->size, 'a'))
+	{
+		LOG_DEBUG("allocateInPlace failed");
 		return false;
 	}
 
@@ -165,6 +364,7 @@ enum bool allocator_isAllocateValid(uint32_t bytes)
  */
 void Allocator_Deallocate(uint8_t* HeapCell)
 {		
+	//check before deallocating
 	if ((!g_isInit) || (!allocator_isDeallocateValid(HeapCell)))
 	{
 			LOG_ERROR("Deallocate failed");			
@@ -172,6 +372,18 @@ void Allocator_Deallocate(uint8_t* HeapCell)
 	}
 
 	LOG_INFO("Starting to deallocate...");	
+
+	Block freeBlock = (Block) HeapCell;
+
+	//switch freeBlock to free
+	Block_SwitchBlockMode(freeBlock);
+
+	//add freeBlock to free-block linked list
+	if(!Heap_FreeListInsertFront(freeBlock))
+	{
+		LOG_ERROR("Deallocate failed");			
+		return;
+	}
 
 	LOG_INFO("Deallocating was succesful!");
 
@@ -209,51 +421,5 @@ enum bool allocator_isDeallocateValid(uint8_t* HeapCell)
 
 	return true; 
 }
-
-
-/***************Debuging Functions Implementations****************/
-
-#ifdef DEBUG
-
-/**
- * [Allocator_PrintHeapHeader: prints the heap header
- 	to get info about heap allocated memory size and head of free list.]
- */
-void Allocator_PrintHeapHeader()
-{
-	if (!g_isInit) allocator_initialize();
-
-	HeapHeader currentHH = (HeapHeader) heap;
-
-	CUSTOMMEMALLOCATOR_PRINT("Heap Header -> {%d, %lu}\n", currentHH->allocMemSize, (uint8_t*)currentHH->headFree - heap);		
-
-	return;
-}
-
-/**
- * [Allocator_PrintHeap: prints the entire heap block by block.]
- */
-void Allocator_PrintHeap()
-{
-	Allocator_PrintHeapHeader();
-
-	uint8_t* currentBlock = NULL;
-
-	currentBlock = heap + sizeof(HeapHeader_st);		
-			 
-	while (currentBlock - heap < HEAP_SIZE)
-	{
-		Block_PrintBlock((Block)currentBlock);		
-		currentBlock = currentBlock + sizeof(Block_st) + ((Block)currentBlock)->size;
-	}
-
-	printf("\n");
-	
-	return; 
-}
-
-#endif 
-
-
 
 /*******************End of File**********************/

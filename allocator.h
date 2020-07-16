@@ -1,19 +1,6 @@
 #ifndef CUSTOMMEMALLOCATOR_ALLOCATOR_H
 #define CUSTOMMEMALLOCATOR_ALLOCATOR_H
 
-/***********************Struct Decleration****************************
- *
- * allocMemSize counts how much memory (in bytes) was allocated.
- * headFree points to the head of the free-block linked list. 
- */
-typedef struct 
-{
-	uint32_t allocMemSize;
-	Block headFree;	
-} HeapHeader_st;
-
-typedef HeapHeader_st* HeapHeader;
-
 /************Public function declerations**********/
 
 /**
@@ -32,23 +19,5 @@ uint8_t* Allocator_Allocate(uint32_t bytes);
  * @param HeapCell [Pointer to heap cell to be deallocated.]
  */
 void Allocator_Deallocate(uint8_t* HeapCell);
-	
-/***************Debuging functions declertions****************/
-
-#ifdef DEBUG
-
-/**
- * [Allocator_PrintHeapHeader: prints the heap header
- 	to get info about heap allocated memory size and head of free list.]
- */
-void Allocator_PrintHeapHeader();
-
-/**
- * [Allocator_PrintHeap: prints the entire heap block by block.]
- */
-void Allocator_PrintHeap();
-
-#endif		
-
-
+		
 #endif //CUSTOMMEMALLOCATOR_ALLOCATOR_H
