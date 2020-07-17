@@ -95,26 +95,45 @@ Block Heap_GetFreeListHead()
 }
 
 /**
- * [Heap_FreeListInsertFront]
- * @param  block [block to insert]
- * @return       [bool according to succes]
+ * [Heap_getFreeListHead]
+ * @return [free list head]
  */
-enum bool Heap_FreeListInsertFront(Block block)
+uint32_t Heap_GetAllocMemSize()
 {
 	HeapHeader currentHH = NULL;
 
 	currentHH = (HeapHeader) heap;
 
-	if ((currentHH == NULL) || (block == NULL))
+	if (!currentHH)
+	{
+		LOG_DEBUG("GetFreeListHead failed");
+		return 0;
+	}
+
+	return currentHH->allocMemSize;
+}
+
+/**
+ * [Heap_FreeListInsertFront]
+ * @param  block [block to insert]
+ * @return       [bool according to succes]
+ */
+enum bool Heap_FreeListInsertFront(Block block)
+{	
+	if (!block)
 	{
 		LOG_DEBUG("FreeListInsertFront failed");
 		return false;
 	}
 
-	block->next = currentHH->headFree;
-	(currentHH->headFree)->prev = block;
-	currentHH->headFree = block;
-
+	if (Heap_GetFreeListHead())
+	{
+		block->next = Heap_GetFreeListHead();
+		(Heap_GetFreeListHead())->prev = block;		
+	}
+	
+	Heap_UpdateHeadFree(block);
+	
 	return true;
 }
 
@@ -126,34 +145,16 @@ enum bool Heap_FreeListInsertFront(Block block)
  */
 enum bool Heap_FreeListReplace(Block outBlock, Block inBlock)
 {
-	//case: outBlock is in middle
-	if ((inBlock->next != NULL) && (inBlock->prev != NULL))
-	{
-		(outBlock->prev)->next = inBlock;
-		inBlock->prev = outBlock->prev;
-
-		(outBlock->next)->prev = inBlock;
-		inBlock->next = outBlock->next;
-	}
-	//case: outBlock is in front
-	else if (outBlock->next != NULL)
+	if (outBlock->next != NULL)
 	{
 		(outBlock->next)->prev = inBlock;
 		inBlock->next = outBlock->next;	
 	}
-	//case: outBlock is last
-	else if (outBlock->prev != NULL)
+
+	if (outBlock->prev != NULL)
 	{
 		(outBlock->prev)->next = inBlock;
-		inBlock->prev = outBlock->prev;		
-	}
-	else
-	{
-		if (!Heap_UpdateHeadFree(inBlock))
-		{
-			LOG_DEBUG("FreeListReplace failed");
-			return false;
-		}
+		inBlock->prev = outBlock->prev;	
 	}
 
 	return true;
@@ -165,7 +166,8 @@ enum bool Heap_FreeListReplace(Block outBlock, Block inBlock)
  * @return       [bool according to succes]
  */
 enum bool Heap_FreeListDelete(Block block)
-{
+{		
+
 	//case: block is in middle
 	if ((block->next != NULL) && (block->prev != NULL))
 	{
@@ -177,10 +179,14 @@ enum bool Heap_FreeListDelete(Block block)
 	{		
 		(block->prev)->next = NULL;
 	}
+	//case:block is first
 	else
-	{
-		LOG_DEBUG("FreeListReplace failed");
-		return false;
+	{		
+		if ((block->next) != NULL)
+		{
+			//case: allocting last free block in the heap
+			(block->next)->prev = NULL;		
+		}
 	}
 
 	return true;
@@ -204,8 +210,18 @@ void Heap_PrintHeapHeader()
 
 	HeapHeader currentHH = (HeapHeader) heap;
 
-	CUSTOMMEMALLOCATOR_PRINT("Heap Header -> {allocated memory size: %d, headFree: %lu}\n\n",\
-							 currentHH->allocMemSize, (uint8_t*)currentHH->headFree - heap);		
+	if (currentHH->headFree != NULL)
+	{
+		CUSTOMMEMALLOCATOR_PRINT("Heap Header -> {allocated memory size: %d, headFree: %lu}\n\n",\
+						 currentHH->allocMemSize, (uint8_t*)currentHH->headFree - heap);				
+	}
+	else
+	{
+		CUSTOMMEMALLOCATOR_PRINT("Heap Header -> {allocated memory size: %d, headFree: (null)}\n\n",\
+						 currentHH->allocMemSize);					
+	}
+
+
 
 	return;
 }

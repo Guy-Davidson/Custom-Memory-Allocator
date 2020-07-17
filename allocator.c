@@ -117,6 +117,12 @@ uint8_t* Allocator_Allocate(uint32_t bytes)
 {	
 	if (!g_isInit) allocator_initialize();
 
+	if (Heap_GetAllocMemSize() == HEAP_SIZE)
+	{
+		LOG_ERROR("Allocate failed: heap overflow");
+		return NULL;
+	}
+
 	if (!allocator_isAllocateValid(bytes)) 
 	{
 			LOG_ERROR("Allocate failed");
@@ -181,10 +187,15 @@ uint8_t* Allocator_Allocate(uint32_t bytes)
 			return NULL;
 		}
 	}	
+
+	if (Heap_GetAllocMemSize() == HEAP_SIZE)
+	{		
+		Heap_UpdateHeadFree(NULL);
+	}
 		
 	LOG_INFO("Allocation was succesful!");
 
-	return (uint8_t*)freeToAlloc;
+	return (uint8_t*)freeToAlloc;	
 }
 
 /**
@@ -242,7 +253,7 @@ Block allocator_getFreeToAllocate(uint32_t bytes)
 
 	if (freeToAlloc->size < requestedSize)
 	{
-		LOG_ERROR("found no available free block");
+		LOG_DEBUG("found no available free block");
 		return NULL;
 	}
 
@@ -258,7 +269,7 @@ Block allocator_getFreeToAllocate(uint32_t bytes)
 enum bool allocator_allocateInsideFree(Block freeToAlloc, uint32_t bytes)
 {
 	uint32_t localAvailableSize = freeToAlloc->size;
-	Block_st tempLinkBlock = *freeToAlloc;
+	Block_st tempLinkBlock = *freeToAlloc;	
 
 	//creat new allocated block.			
 	if (!Block_NewBlock('a', bytes, (uint8_t*)freeToAlloc))
@@ -275,6 +286,11 @@ enum bool allocator_allocateInsideFree(Block freeToAlloc, uint32_t bytes)
 	{
 		LOG_DEBUG("allocateInsideFree failed");
 		return false;
+	}
+
+	if (freeToAlloc == Heap_GetFreeListHead())
+	{
+		Heap_UpdateHeadFree(newFreeBlock);
 	}
 
 	if (!Heap_FreeListReplace(&tempLinkBlock, newFreeBlock))
@@ -300,13 +316,18 @@ enum bool allocator_allocateInsideFree(Block freeToAlloc, uint32_t bytes)
 enum bool allocator_allocateExapandedBlock(Block freeToAlloc, uint32_t bytes)
 {
 	uint32_t newBlockBufferSize = Block_BufferSizePadding(bytes) + BUFFER_UNIT;
-	Block_st tempLinkBlock = *freeToAlloc;
+	Block_st tempLinkBlock = *freeToAlloc;		
 	
 	//create new allocated block.			
 	if (!Block_NewBlock('a', newBlockBufferSize, (uint8_t*)freeToAlloc))
 	{
 		LOG_DEBUG("allocateExapandedBlock failed");
 		return false;
+	}
+
+	if (freeToAlloc == Heap_GetFreeListHead())
+	{				
+		Heap_UpdateHeadFree(tempLinkBlock.next);				
 	}
 
 	if (!Heap_FreeListDelete(&tempLinkBlock))
@@ -330,13 +351,18 @@ enum bool allocator_allocateExapandedBlock(Block freeToAlloc, uint32_t bytes)
  * @return             [bool according to succss]
  */
 enum bool allocator_allocateInPlace(Block freeToAlloc)
-{
-	Block_st tempLinkBlock = *freeToAlloc;
+{	
+	Block_st tempLinkBlock = *freeToAlloc;	
 
 	if (!Block_SwitchBlockMode(freeToAlloc))
 	{
 		LOG_DEBUG("allocateInPlace failed");
 		return false;
+	}
+
+	if (freeToAlloc == Heap_GetFreeListHead())
+	{		
+		Heap_UpdateHeadFree(tempLinkBlock.next);
 	}
 
 	if (!Heap_FreeListDelete(&tempLinkBlock))
@@ -377,6 +403,8 @@ void Allocator_Deallocate(uint8_t* HeapCell)
 
 	//switch freeBlock to free
 	Block_SwitchBlockMode(freeBlock);
+
+	Heap_UpdateSize(freeBlock->size, 's');	
 
 	//add freeBlock to free-block linked list
 	if(!Heap_FreeListInsertFront(freeBlock))

@@ -21,25 +21,33 @@ extern uint8_t heap[HEAP_SIZE];
 int main(int argc, char const *argv[])
 {			
 	uint8_t* ptr1 = NULL;
-
 	uint8_t* ptr2 = NULL;	 
-
 	uint8_t* ptr3 = NULL;
+	uint8_t* ptr4 = NULL;
+	uint8_t* ptr5 = NULL;	 
+	uint8_t* ptr6 = NULL;
 
-	ptr1 = Allocator_Allocate(1);
-
+	ptr1 = Allocator_Allocate(1);	
 	ptr2 = Allocator_Allocate(1);
-
 	ptr3 = Allocator_Allocate(1);
-
-	Allocator_Deallocate(ptr1); 
-
-	Allocator_Deallocate(ptr2); 
-
-	Allocator_Allocate(3000);
-
-	Heap_PrintHeap();
+	ptr4 = Allocator_Allocate(1);			
+	ptr5 = Allocator_Allocate(1);			
+	ptr6 = Allocator_Allocate(1);	
 	
+	Allocator_Deallocate(ptr6); 
+	Allocator_Deallocate(ptr1); 	
+	Allocator_Deallocate(ptr2); 	
+	Allocator_Deallocate(ptr3); 	
+	Allocator_Deallocate(ptr4); 	
+	Allocator_Deallocate(ptr5); 	
+	
+	Allocator_Allocate(430);
+	Heap_PrintHeap();	
+	//Allocator_Allocate();
+	//Heap_PrintHeap();
+	
+
+
 	return 0;
 }
 

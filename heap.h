@@ -10,6 +10,7 @@ typedef struct
 {
 	uint32_t allocMemSize;
 	Block headFree;	
+	Block tailFree;
 } HeapHeader_st;
 
 typedef HeapHeader_st* HeapHeader;
@@ -34,6 +35,12 @@ enum bool Heap_UpdateHeadFree(Block block);
  * @return [free list head]
  */
 Block Heap_GetFreeListHead();
+
+/**
+ * [Heap_getFreeListHead]
+ * @return [free list head]
+ */
+uint32_t Heap_GetAllocMemSize();
 
 /**
  * [Heap_FreeListInsertFront]

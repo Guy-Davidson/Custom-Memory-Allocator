@@ -17,7 +17,7 @@
 
 #ifdef DEBUG
 
-#define LOG_DEBUG(messege) CUSTOMMEMALLOCATOR_PRINT("%s\n", messege)
+#define LOG_DEBUG(messege) CUSTOMMEMALLOCATOR_PRINT("%s\n\n", messege)
 
 #else
 

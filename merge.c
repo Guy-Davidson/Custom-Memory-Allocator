@@ -44,7 +44,6 @@ static enum bool merge_mergeTwoBlocks(Block block1, Block block2);
  */
 static Block merge_getPriorBlock(Block block1, Block block2);
 
-
 /*******************Function Implementations********************/
 
 /**
@@ -59,12 +58,15 @@ enum bool Merge_Exe()
 	enum bool changedHeap = false;
 	enum bool isMerged = false; 
 
-	LOG_INFO("searching free list to merge blocks...");
+	LOG_INFO("searching free list to merge blocks...");	
 
 	while (!isMerged)
-	{
+	{		
+		LOOP:
+
 		isMerged = true;
-		Block currentBlock = NULL;
+		Block currentBlock = NULL;		
+
 		currentBlock = Heap_GetFreeListHead();
 
 		if (!currentBlock)
@@ -73,24 +75,24 @@ enum bool Merge_Exe()
 			return false;
 		}
 
-		while (!currentBlock)
+		while (currentBlock)
 		{
 			Block listIterator = Heap_GetFreeListHead();
 
-			while (!listIterator)
-			{
+			while (listIterator)				
+			{												
 				if (merge_isAdjacent(currentBlock, listIterator))
 				{
 					merge_mergeTwoBlocks(currentBlock, listIterator);
-					changedHeap = true;
-					isMerged = false;
-				}
+					changedHeap = true;					
+					goto LOOP;
+				}				
+
+				listIterator = listIterator->next;
 			}
 
-			listIterator = listIterator->next;
+			currentBlock = currentBlock->next;
 		}
-
-		currentBlock = currentBlock->next;
 	}
 
 	LOG_INFO("finishd searching free list succesfuly!");
@@ -105,10 +107,10 @@ enum bool Merge_Exe()
  * @return [bool]
  */
 enum bool merge_isAdjacent(Block block1, Block block2)
-{
+{			
 	enum bool right = ((uint8_t*)block1 + sizeof(Block_st) + block1->size) == (uint8_t*)block2;
 
-	enum bool left = ((uint8_t*)block2 + sizeof(Block_st) + block2->size) == (uint8_t*)block1;
+	enum bool left = ((uint8_t*)block2 + sizeof(Block_st) + block2->size) == (uint8_t*)block1;	
 
 	return right || left;
 }
@@ -130,6 +132,8 @@ enum bool merge_mergeTwoBlocks(Block block1, Block block2)
 
 	LOG_INFO("merging two blocks...");
 
+	//add min and max
+
 	Block leftBlock = NULL;
 	Block rightBlock = NULL;
 	Block firstBlock = NULL;
@@ -147,7 +151,7 @@ enum bool merge_mergeTwoBlocks(Block block1, Block block2)
 	}
 
 	if (block1 == merge_getPriorBlock(block1, block2))
-	{
+	{		
 		firstBlock = block1;
 		secondBlock = block2;
 	}
@@ -155,10 +159,10 @@ enum bool merge_mergeTwoBlocks(Block block1, Block block2)
 	{
 		firstBlock = block2;
 		secondBlock = block1;
-	}
+	}	
 
 	Block_st tempLink1 = *firstBlock;
-	Block_st tempLink2 = *secondBlock;
+	Block_st tempLink2 = *secondBlock;		
 
 	uint32_t mergedBlockSize = leftBlock->size + rightBlock->size + sizeof(Block_st);
 	
@@ -168,20 +172,69 @@ enum bool merge_mergeTwoBlocks(Block block1, Block block2)
 		return false;
 	}
 
-	//update free block linked list
-	(tempLink1.prev)->next = leftBlock;
-	leftBlock->prev = tempLink1.prev;
+	if (firstBlock == Heap_GetFreeListHead() || secondBlock == Heap_GetFreeListHead()) 
+	{		
+		Heap_UpdateHeadFree(leftBlock);
+	}		
 
-	(tempLink2.next)->prev = leftBlock;
-	leftBlock->next = tempLink2.next;
+	//update list linking 
+	Block mergedBlock = leftBlock;
 
+	//case:merge to first. not linked to each other.
+	if ((firstBlock == mergedBlock) && ((&tempLink1)->next != secondBlock))
+	{				
+		if (!Heap_FreeListDelete(&tempLink2))
+		{
+			LOG_DEBUG("mergeTwoBlocks failed");
+			return false;
+		}
+		if (!Heap_FreeListReplace(&tempLink1, mergedBlock))
+		{
+			LOG_DEBUG("mergeTwoBlocks failed");
+			return false;	
+		}
+	}			
+	//case:merge to second. not linked to each other.
+	else if ((secondBlock == mergedBlock) && (((&tempLink2)->prev != firstBlock)))
+	{
+		if (!Heap_FreeListDelete(&tempLink1))
+		{
+			LOG_DEBUG("mergeTwoBlocks failed");
+			return false;
+		}
+		if (!Heap_FreeListReplace(&tempLink2, mergedBlock))
+		{
+			LOG_DEBUG("mergeTwoBlocks failed");
+			return false;	
+		}
+	}
+	//case: linked to each other.
+	else
+	{
+		mergedBlock->prev = tempLink1.prev;
+			
+		if (tempLink1.prev != NULL)
+		{
+			(tempLink1.prev)->next = mergedBlock;
+		}
+		
+		mergedBlock->next = tempLink2.next;
+
+		if (tempLink2.next != NULL) 
+		{
+			(tempLink2.next)->prev = mergedBlock;
+		}
+	}
+		
 	if (!Heap_UpdateSize(sizeof(Block_st), 's'))
 	{
 		LOG_DEBUG("mergeTwoBlocks failed");
 		return false;	
 	}
-	
+
 	LOG_INFO("merged two free blocks succesfuly!");
+	//THIS IS A DEBUG STATMENTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTttftftftftftfTTTTTTTTTTTTTTTTTTTTTTTT
+	Heap_PrintHeap();
 	return true;
 }
 
@@ -203,15 +256,17 @@ Block merge_getPriorBlock(Block block1, Block block2)
 		return NULL;
 	}
 
-	while (!listIterator)
+	while (listIterator)
 	{
 		if (listIterator == block1)
 		{
+			//LOG_INFO("PriorBlock returns block1!");
 			return block1;
 		}
 
 		if (listIterator == block2)
 		{
+			//LOG_INFO("PriorBlock returns block2!");
 			return block2;
 		}
 
@@ -222,8 +277,6 @@ Block merge_getPriorBlock(Block block1, Block block2)
 	return NULL;
 	
 }
-
-
 
 /***************Debuging Functions Implementations****************/
 
