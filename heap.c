@@ -13,6 +13,8 @@
 #include "merge.h"
 //heap information module
 #include "heap.h"
+//analyze heap data
+#include "processHeap.h"
 
 /**************************Global Variables**************************/
 
@@ -31,19 +33,19 @@ extern enum bool g_isInit;
  * @param  mode ['a' for add and 's' for subtract]
  * @return      [bool according to succes]
  */
-enum bool Heap_UpdateSize(uint32_t size, uint8_t mode)
+enum bool Heap_UpdateSize(uint32_t size, enum operation mode)
 {
 	HeapHeader currentHH = NULL;
 
 	currentHH = (HeapHeader) heap;
 
-	if ((!currentHH) || ((mode != 'a') && (mode != 's')))
+	if ((!currentHH) || ((mode != subtract) && (mode != add)))
 	{
 		LOG_ERROR("UpdateSize failed");
 		return false;
 	}
 
-	if (mode == 'a') 
+	if (mode == add) 
 	{
 		currentHH->allocMemSize += size;
 	}
@@ -107,7 +109,7 @@ uint32_t Heap_GetAllocMemSize()
 	if (!currentHH)
 	{
 		LOG_DEBUG("GetFreeListHead failed");
-		return 0;
+		return FAILED_RETURN;
 	}
 
 	return currentHH->allocMemSize;
@@ -145,6 +147,12 @@ enum bool Heap_FreeListInsertFront(Block block)
  */
 enum bool Heap_FreeListReplace(Block outBlock, Block inBlock)
 {
+	if ((!outBlock) || (!inBlock))
+	{
+		LOG_DEBUG("FreeListReplace failed");
+		return false;
+	}
+
 	if (outBlock->next != NULL)
 	{
 		(outBlock->next)->prev = inBlock;
@@ -167,6 +175,11 @@ enum bool Heap_FreeListReplace(Block outBlock, Block inBlock)
  */
 enum bool Heap_FreeListDelete(Block block)
 {		
+	if (!block)
+	{
+		LOG_DEBUG("FreeListDelete failed");
+		return false;
+	}
 
 	//case: block is in middle
 	if ((block->next != NULL) && (block->prev != NULL))
@@ -209,6 +222,12 @@ void Heap_PrintHeapHeader()
 	}
 
 	HeapHeader currentHH = (HeapHeader) heap;
+
+	if (!currentHH)
+	{
+		LOG_ERROR("Heap uninitialized");
+		return;	
+	}
 
 	if (currentHH->headFree != NULL)
 	{

@@ -22,7 +22,7 @@ typedef HeapHeader_st* HeapHeader;
  * @param  size [size to add]
  * @return      [bool according to succes]
  */
-enum bool Heap_UpdateSize(uint32_t size, uint8_t mode);
+enum bool Heap_UpdateSize(uint32_t size, enum operation mode);
 
 /**
  * [Heap_UpdateHeadFree change headFree]

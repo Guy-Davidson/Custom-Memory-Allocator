@@ -13,6 +13,8 @@
 #include "merge.h"
 //heap information module
 #include "heap.h"
+//analyze heap data
+#include "processHeap.h"
 
 /**************************Global Variables**************************/
 extern uint8_t heap[HEAP_SIZE];
@@ -108,6 +110,12 @@ enum bool Merge_Exe()
  */
 enum bool merge_isAdjacent(Block block1, Block block2)
 {			
+	if ((!block1) || (!block2))
+	{
+		LOG_DEBUG("isAdjacent failed");
+		return false;
+	}
+
 	enum bool right = ((uint8_t*)block1 + sizeof(Block_st) + block1->size) == (uint8_t*)block2;
 
 	enum bool left = ((uint8_t*)block2 + sizeof(Block_st) + block2->size) == (uint8_t*)block1;	
@@ -132,7 +140,7 @@ enum bool merge_mergeTwoBlocks(Block block1, Block block2)
 
 	LOG_INFO("merging two blocks...");
 
-	//add min and max
+	
 
 	Block leftBlock = NULL;
 	Block rightBlock = NULL;
@@ -166,7 +174,7 @@ enum bool merge_mergeTwoBlocks(Block block1, Block block2)
 
 	uint32_t mergedBlockSize = leftBlock->size + rightBlock->size + sizeof(Block_st);
 	
-	if (!Block_NewBlock('f', mergedBlockSize, (uint8_t*)leftBlock))
+	if (!Block_NewBlock(free, mergedBlockSize, (uint8_t*)leftBlock))
 	{
 		LOG_DEBUG("mergeTwoBlocks failed");
 		return false;
@@ -226,15 +234,20 @@ enum bool merge_mergeTwoBlocks(Block block1, Block block2)
 		}
 	}
 		
-	if (!Heap_UpdateSize(sizeof(Block_st), 's'))
+	if (!Heap_UpdateSize(sizeof(Block_st), subtract))
 	{
 		LOG_DEBUG("mergeTwoBlocks failed");
 		return false;	
 	}
 
 	LOG_INFO("merged two free blocks succesfuly!");
-	//THIS IS A DEBUG STATMENTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTttftftftftftfTTTTTTTTTTTTTTTTTTTTTTTT
+	
+	#ifdef DEBUG
+
 	Heap_PrintHeap();
+
+	#endif
+
 	return true;
 }
 
@@ -259,14 +272,12 @@ Block merge_getPriorBlock(Block block1, Block block2)
 	while (listIterator)
 	{
 		if (listIterator == block1)
-		{
-			//LOG_INFO("PriorBlock returns block1!");
+		{			
 			return block1;
 		}
 
 		if (listIterator == block2)
-		{
-			//LOG_INFO("PriorBlock returns block2!");
+		{			
 			return block2;
 		}
 
@@ -277,7 +288,5 @@ Block merge_getPriorBlock(Block block1, Block block2)
 	return NULL;
 	
 }
-
-/***************Debuging Functions Implementations****************/
 
 /*******************End of File**********************/

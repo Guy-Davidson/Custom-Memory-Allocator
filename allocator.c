@@ -13,6 +13,8 @@
 #include "merge.h"
 //heap information module
 #include "heap.h"
+//analyze heap data
+#include "processHeap.h"
 
 /**************************Global Variables**************************/
 extern uint8_t heap[HEAP_SIZE];
@@ -93,7 +95,7 @@ void allocator_initialize()
 
 	newHeapHeader->headFree = NULL;	
 
-	if (!Block_NewBlock('f', HEAP_SIZE - newHeapHeader->allocMemSize, heap + sizeof(HeapHeader_st)))
+	if (!Block_NewBlock(free, HEAP_SIZE - newHeapHeader->allocMemSize, heap + sizeof(HeapHeader_st)))
 	{
 		LOG_ERROR("Initialization failed");
 		return;
@@ -101,9 +103,9 @@ void allocator_initialize()
 
 	newHeapHeader->headFree = (Block) (heap + sizeof(HeapHeader_st));
 
-	LOG_INFO("Initialized succesfuly!");
-
 	g_isInit = true;
+
+	LOG_INFO("Initialized succesfuly!");
 	
 	return;
 }
@@ -195,7 +197,7 @@ uint8_t* Allocator_Allocate(uint32_t bytes)
 		
 	LOG_INFO("Allocation was succesful!");
 
-	return (uint8_t*)freeToAlloc;	
+	return (uint8_t*)freeToAlloc + sizeof(Block_st);	
 }
 
 /**
@@ -224,13 +226,23 @@ enum bool allocator_isAllocateValid(uint32_t bytes)
  */
 Block allocator_getFreeToAllocate(uint32_t bytes)
 {
+	if ((int32_t)bytes <= 0)
+	{
+		LOG_DEBUG("getFreeToAllocate faild");
+		return NULL;
+	}
+
 	uint32_t requestedSize = Block_BufferSizePadding(bytes);
 	Block freeToAlloc = NULL;
 	Block freeListIterator = NULL;
 
-	HeapHeader currentHH = (HeapHeader) heap;	
+	if (Heap_GetFreeListHead() == NULL)
+	{
+		LOG_DEBUG("getFreeToAllocate failed");
+		return NULL;
+	}
 
-	freeToAlloc	= currentHH->headFree;
+	freeToAlloc	= Heap_GetFreeListHead();
 	freeListIterator = freeToAlloc->next;
 
 	LOG_INFO("searching list for a free block large enough to allocate...");
@@ -268,11 +280,17 @@ Block allocator_getFreeToAllocate(uint32_t bytes)
  */
 enum bool allocator_allocateInsideFree(Block freeToAlloc, uint32_t bytes)
 {
+	if ((!freeToAlloc) || ((int32_t)bytes <= 0))
+	{
+		LOG_DEBUG("allocateInsideFree failed");
+		return false;
+	}
+
 	uint32_t localAvailableSize = freeToAlloc->size;
 	Block_st tempLinkBlock = *freeToAlloc;	
 
 	//creat new allocated block.			
-	if (!Block_NewBlock('a', bytes, (uint8_t*)freeToAlloc))
+	if (!Block_NewBlock(alloc, bytes, (uint8_t*)freeToAlloc))
 	{
 		LOG_DEBUG("allocateInsideFree failed");
 		return false;
@@ -282,7 +300,7 @@ enum bool allocator_allocateInsideFree(Block freeToAlloc, uint32_t bytes)
 	Block newFreeBlock = (Block)((uint8_t*)freeToAlloc + newBlockSize);
 	
 	//update free block for being smaller.		
-	if (!Block_NewBlock('f', localAvailableSize - newBlockSize, (uint8_t*)newFreeBlock))
+	if (!Block_NewBlock(free, localAvailableSize - newBlockSize, (uint8_t*)newFreeBlock))
 	{
 		LOG_DEBUG("allocateInsideFree failed");
 		return false;
@@ -299,7 +317,7 @@ enum bool allocator_allocateInsideFree(Block freeToAlloc, uint32_t bytes)
 		return false;
 	}
 	
-	if (!Heap_UpdateSize(newBlockSize, 'a'))
+	if (!Heap_UpdateSize(newBlockSize, add))
 	{
 		LOG_DEBUG("allocateInsideFree failed");
 		return false;	
@@ -315,11 +333,17 @@ enum bool allocator_allocateInsideFree(Block freeToAlloc, uint32_t bytes)
  */
 enum bool allocator_allocateExapandedBlock(Block freeToAlloc, uint32_t bytes)
 {
+	if ((!freeToAlloc) || ((int32_t)bytes <= 0))
+	{
+		LOG_DEBUG("allocateInsideFree failed");
+		return false;
+	}
+
 	uint32_t newBlockBufferSize = Block_BufferSizePadding(bytes) + BUFFER_UNIT;
 	Block_st tempLinkBlock = *freeToAlloc;		
 	
 	//create new allocated block.			
-	if (!Block_NewBlock('a', newBlockBufferSize, (uint8_t*)freeToAlloc))
+	if (!Block_NewBlock(alloc, newBlockBufferSize, (uint8_t*)freeToAlloc))
 	{
 		LOG_DEBUG("allocateExapandedBlock failed");
 		return false;
@@ -336,7 +360,7 @@ enum bool allocator_allocateExapandedBlock(Block freeToAlloc, uint32_t bytes)
 		return false;
 	}
 
-	if (!Heap_UpdateSize(newBlockBufferSize, 'a'))
+	if (!Heap_UpdateSize(newBlockBufferSize, add))
 	{
 		LOG_DEBUG("allocateExapandedBlock failed");
 		return false;
@@ -352,6 +376,12 @@ enum bool allocator_allocateExapandedBlock(Block freeToAlloc, uint32_t bytes)
  */
 enum bool allocator_allocateInPlace(Block freeToAlloc)
 {	
+	if (!freeToAlloc) 
+	{
+		LOG_DEBUG("allocateInsideFree failed");
+		return false;
+	}
+
 	Block_st tempLinkBlock = *freeToAlloc;	
 
 	if (!Block_SwitchBlockMode(freeToAlloc))
@@ -371,7 +401,7 @@ enum bool allocator_allocateInPlace(Block freeToAlloc)
 		return false;
 	}
 
-	if (!Heap_UpdateSize(freeToAlloc->size, 'a'))
+	if (!Heap_UpdateSize(freeToAlloc->size, add))
 	{
 		LOG_DEBUG("allocateInPlace failed");
 		return false;
@@ -391,20 +421,28 @@ enum bool allocator_allocateInPlace(Block freeToAlloc)
 void Allocator_Deallocate(uint8_t* HeapCell)
 {		
 	//check before deallocating
-	if ((!g_isInit) || (!allocator_isDeallocateValid(HeapCell)))
+	Block freeBlock = (Block) (HeapCell - sizeof(Block_st));
+
+	if ((!g_isInit) || (!allocator_isDeallocateValid((uint8_t*)freeBlock)))
 	{
 			LOG_ERROR("Deallocate failed");			
 			return;
 	}
 
-	LOG_INFO("Starting to deallocate...");	
-
-	Block freeBlock = (Block) HeapCell;
+	LOG_INFO("Starting to deallocate...");		
 
 	//switch freeBlock to free
-	Block_SwitchBlockMode(freeBlock);
+	if (!Block_SwitchBlockMode(freeBlock))
+	{
+		LOG_DEBUG("Deallocate failed");
+		return;
+	}
 
-	Heap_UpdateSize(freeBlock->size, 's');	
+	if (!Heap_UpdateSize(freeBlock->size, subtract))
+	{
+		LOG_DEBUG("Deallocate failed");
+		return;	
+	}
 
 	//add freeBlock to free-block linked list
 	if(!Heap_FreeListInsertFront(freeBlock))
@@ -414,6 +452,12 @@ void Allocator_Deallocate(uint8_t* HeapCell)
 	}
 
 	LOG_INFO("Deallocating was succesful!");
+
+	#ifdef TIME
+
+	Merge_Exe();
+
+	#endif
 
 	return;
 }
@@ -427,7 +471,7 @@ enum bool allocator_isDeallocateValid(uint8_t* HeapCell)
 {
 	uint32_t bufferIndex = HeapCell - heap;	
 
-	if ((bufferIndex <= 0) || (bufferIndex > HEAP_SIZE))
+	if (((int32_t)bufferIndex <= 0) || (bufferIndex > HEAP_SIZE))
 	{
 		LOG_DEBUG("Pointer out of bounds");
 		return false;
@@ -435,7 +479,7 @@ enum bool allocator_isDeallocateValid(uint8_t* HeapCell)
 	
 	Block freeBlock = (Block) HeapCell;	
 
-	if (freeBlock->mode != 'a') 
+	if (freeBlock->mode != alloc) 
 	{
 		LOG_DEBUG("mode inccorect");
 		return false;

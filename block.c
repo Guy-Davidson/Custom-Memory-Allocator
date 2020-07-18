@@ -13,6 +13,8 @@
 #include "merge.h"
 //heap information module
 #include "heap.h"
+//analyze heap data
+#include "processHeap.h"
 
 /**************************Global Variables**************************/
 extern uint8_t heap[HEAP_SIZE];
@@ -22,19 +24,19 @@ extern uint8_t heap[HEAP_SIZE];
 /**
  * [block_isNewBlockValid checks to validate newBlock agrs]
  */
-static enum bool block_isNewBlockValid(uint8_t mode, uint32_t size, uint8_t* heapCell);
+static enum bool block_isNewBlockValid(enum status mode, uint32_t size, uint8_t* heapCell);
 
 
 /*******************Function Implementations********************/
 
 /**
  * [Block_NewBlock creates new block in the heap.]
- * @param  mode     [new block mode 'a' or 'f']
+ * @param  mode     [new block mode 'alloc' or 'free']
  * @param  size     [buffer size]
  * @param  heapCell [Pointer to heap where the block will be stored]
  * @return          [bool according to succes]
  */
-enum bool Block_NewBlock(uint8_t mode, uint32_t size, uint8_t* heapCell)
+enum bool Block_NewBlock(enum status mode, uint32_t size, uint8_t* heapCell)
 {
 	if (!block_isNewBlockValid(mode, size, heapCell))
 	{
@@ -73,11 +75,11 @@ enum bool Block_NewBlock(uint8_t mode, uint32_t size, uint8_t* heapCell)
 /**
  * [block_isNewBlockValid checks to validate newBlock agrs]
  */
-enum bool block_isNewBlockValid(uint8_t mode, uint32_t size, uint8_t* heapCell)
+enum bool block_isNewBlockValid(enum status mode, uint32_t size, uint8_t* heapCell)
 {
-	if ((mode != 'a') && (mode != 'f'))
+	if ((mode != alloc) && (mode != free))
 	{
-		LOG_ERROR("mode can be either 'a' or 'f'");
+		LOG_ERROR("mode can be either 'alloc' or 'free'");
 		return false;
 	}
 
@@ -108,6 +110,12 @@ enum bool block_isNewBlockValid(uint8_t mode, uint32_t size, uint8_t* heapCell)
  */
 uint32_t Block_BufferSizePadding(uint32_t size)
 {
+	if ((int32_t)size <= 0)
+	{
+		LOG_DEBUG("BufferSizePadding failed");
+		return FAILED_RETURN;
+	}
+
 	uint32_t res = BUFFER_UNIT;	
 	
 	while (res < size)
@@ -125,23 +133,23 @@ uint32_t Block_BufferSizePadding(uint32_t size)
  */
 enum bool Block_SwitchBlockMode(Block block)
 {	
-	if ((block->mode != 'a') && (block->mode != 'f'))
+	if ((!block) || ((block->mode != alloc) && (block->mode != free)))
 	{
 		LOG_ERROR("Invalid block for switch");
 		return false;
 	}
 
 	
-	if (block->mode == 'a')
+	if (block->mode == alloc)
 	{
 		LOG_INFO("switched allocated block to free.");
-		block->mode = 'f';
+		block->mode = free;
 	}
 
 	else 
 	{
 		LOG_INFO("switched free block to allocated.");
-		block->mode = 'a';
+		block->mode = alloc;
 	}
 
 	return true;
@@ -158,7 +166,13 @@ enum bool Block_SwitchBlockMode(Block block)
  */
 void Block_PrintBlock(Block block)
 {
-	CUSTOMMEMALLOCATOR_PRINT("{index: %lu, mode: %c, size: %d, ",(uint8_t*)block - heap, block->mode, block->size);
+	if (!block)
+	{
+		LOG_DEBUG("PrintBlock failed");
+		return;
+	}
+
+	CUSTOMMEMALLOCATOR_PRINT("{index: %lu, mode: %c, size: %d, ",(uint8_t*)block - heap, Block_printMode(block->mode), block->size);
 
 	if (block->next == NULL)	
 	{
@@ -181,14 +195,44 @@ void Block_PrintBlock(Block block)
 
 	CUSTOMMEMALLOCATOR_PRINT("->[");   
 	
-	for (uint32_t i = 0; i < block->size - 1 ; i++)
+	for (uint32_t i = 0; i < block->size ; i++)
 	{
-		CUSTOMMEMALLOCATOR_PRINT("-, ");
+		if (block->mode == free)
+		{
+			CUSTOMMEMALLOCATOR_PRINT("-, ");
+		}
+
+		else 
+		{
+			CUSTOMMEMALLOCATOR_PRINT("%c, ", *((uint8_t*)block + sizeof(Block_st) + i));	
+		}
 	}
 
-	CUSTOMMEMALLOCATOR_PRINT("-]\n\n");
+	CUSTOMMEMALLOCATOR_PRINT("]\n\n");
 
 	return;
+}
+
+/**
+ * [Block_printMode enum status pirnt function]
+ * @param  mode [the block mode free ot alloc]
+ * @return      ['a' for alloc and 'f for free']
+ */
+char Block_printMode(enum status mode)
+{
+	if ((mode != alloc) && (mode != free))
+	{
+		LOG_DEBUG("printMode failed");
+		return FAILED_RETURN;
+	}
+	if (mode == alloc)
+	{
+		return 'a';
+	}
+	else
+	{
+		return 'f';
+	}
 }
 
 #endif

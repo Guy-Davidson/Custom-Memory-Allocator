@@ -9,7 +9,7 @@
  */
 typedef struct block
 {
-	uint8_t mode;
+	enum status mode;
 	uint32_t size;
 	struct block* next;
 	struct block* prev;
@@ -21,12 +21,12 @@ typedef Block_st* Block;
 
 /**
  * [Block_NewBlock creates new block in the heap.]
- * @param  mode     [new block mode 'a' or 'f']
+ * @param  mode     [new block mode 'alloc' or 'free']
  * @param  size     [buffer size]
  * @param  heapCell [Pointer to heap where the block will be stored]
  * @return          [bool according to succes]
  */
-enum bool Block_NewBlock(uint8_t mode, uint32_t size, uint8_t* heapCell);
+enum bool Block_NewBlock(enum status mode, uint32_t size, uint8_t* heapCell);
 
 /**
  * [Block_switchBlockMode: switches block mode]
@@ -55,6 +55,13 @@ uint32_t Block_BufferSizePadding(uint32_t size);
  * @param bufferIndex [block to print]
  */
 void Block_PrintBlock(Block block);
+
+/**
+ * [Block_printMode enum status pirnt function]
+ * @param  mode [the block mode free ot alloc]
+ * @return      ['a' for alloc and 'f for free']
+ */
+char Block_printMode(enum status mode);
 
 #endif
 
