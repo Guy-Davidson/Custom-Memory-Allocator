@@ -16,7 +16,7 @@ enum operation {subtract, add};
 
 /**Heap Properties**/
 //IMPORTANT: implementation dictates HEAP_SIZE to be a mupltiple of BUFFER_UNIT
-#define HEAP_SIZE (20 * BUFFER_UNIT)
+#define HEAP_SIZE (50 * BUFFER_UNIT)
 #define MAX_BUFFER_SIZE (HEAP_SIZE - sizeof(HeapHeader_st) - sizeof(Block_st))
 
 /**Constants**/
