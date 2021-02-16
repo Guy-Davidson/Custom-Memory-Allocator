@@ -23,6 +23,15 @@ For the full library use the following headers:
 #include "processHeap.h"
 ```
 
+## Compilation
+```bash
+//For normal usage:
+make clean
+
+//For debuging and info loggins:
+make all
+```
+
 ## Allocate & Free Memory
 
 ```c
