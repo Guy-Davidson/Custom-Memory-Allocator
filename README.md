@@ -97,6 +97,25 @@ Implementation dictates HEAP_SIZE to be a mupltiple of BUFFER_UNIT (24 bits).
 #define HEAP_SIZE (N * BUFFER_UNIT)
 ```
 
+## Debug
+```c
+/**
+ * [Allocator_PrintHeapHeader: prints the heap header
+ 	to get info about heap allocated memory size and head of free list.]
+ */
+void Heap_PrintHeapHeader();
+
+/**
+ * [Allocator_PrintHeap: prints the entire heap block by block.]
+ */
+void Heap_PrintHeap();
+
+/**
+ * [Allocator_PrintFreeBlockList]
+ */
+void Heap_PrintFreeBlockList();
+```
+
 
 ## Contact
 If you would like to get in touch with me or comment on anything I've presented in my site, please fill free to send me a Message via one of these links. Thanks!
